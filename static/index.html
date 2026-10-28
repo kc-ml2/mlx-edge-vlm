@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Caption Studio</title><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar"><div class="brand"><span class="brand-mark">◈</span><span>CAPTION<span class="brand-light">STUDIO</span></span></div><div class="top-status"><span class="status-dot"></span><span id="top-status">Checking runtime</span></div></header>
+<main>
+  <div class="heading"><div><p class="eyebrow">LOCAL VISION WORKSPACE <span> / 01</span></p><h1>See the scene.<br><span>Find the words.</span></h1><p class="subhead">Image and video captioning, running on your Mac.</p></div><div class="heading-aside"><span class="aside-label">WORKSPACE</span><strong>Vision / Caption</strong><span>Apple Silicon · Local inference</span></div></div>
+  <div class="workspace">
+    <section class="main-column">
+      <div class="section-heading"><div><span class="section-number">01</span><h2>Source media</h2></div><span class="section-meta" id="media-meta">IMAGE OR VIDEO</span></div>
+      <div class="media-stage" id="drop-zone">
+        <div class="empty" id="empty"><div class="upload-icon">↥</div><h3>Drop your media here</h3><p>Choose an image or video to get started</p><button class="button light" id="choose">Choose file <span>↗</span></button><small>JPG, PNG, WEBP, MP4, MOV &amp; more</small></div>
+        <img id="image" alt="Selected media" hidden><video id="video" controls playsinline hidden></video>
+        <button id="replace" class="replace" hidden>Replace media</button>
+        <input id="file" type="file" accept="image/*,video/*" hidden>
+      </div>
+      <div class="media-footer"><div><span class="tiny-label">SOURCE</span><strong id="filename">No file selected</strong></div><button id="run" class="button primary" disabled>Generate caption <span>↗</span></button></div>
+      <div class="section-heading results-heading"><div><span class="section-number">02</span><h2>Caption output</h2></div><span class="section-meta" id="result-status">WAITING FOR MEDIA</span></div>
+      <div class="output" id="output"><div class="output-empty"><span>✳</span><div><strong>Your captions will appear here</strong><p>Load a model and choose media to begin.</p></div></div></div>
+    </section>
+    <aside class="sidebar">
+      <div class="side-title"><span>SETUP</span><span>✳</span></div>
+      <div class="side-block"><div class="block-header"><span class="section-number">01</span><h3>Vision model</h3></div><p>Connect an MLX-compatible model from Hugging Face.</p><label for="model">MODEL LINK OR ID</label><input id="model" value="https://huggingface.co/mlx-community/Qwen2-VL-2B-Instruct-4bit" spellcheck="false"><button class="button dark full" id="load">Download &amp; load <span>↗</span></button><div class="model-status"><span class="status-dot" id="model-dot"></span><span id="model-status">No model loaded</span></div></div>
+      <div class="side-block"><div class="block-header"><span class="section-number">02</span><h3>Caption settings</h3></div><label for="prompt">INSTRUCTION</label><textarea id="prompt" rows="4">Describe the visible scene clearly and concisely. Focus on the main subjects and actions.</textarea><div class="setting"><label for="interval">VIDEO SAMPLE INTERVAL</label><div class="input-unit"><input id="interval" type="number" value="2" min="0.5" max="30" step="0.5"><span>SEC</span></div></div><div class="setting"><label for="threshold">SCENE CHANGE SENSITIVITY</label><select id="threshold"><option value="0.06">High</option><option value="0.12" selected>Medium</option><option value="0.22">Low</option></select></div></div>
+      <div class="side-note"><span>◉</span><p><strong>On your device</strong><br>Media stays on this Mac. Model files are downloaded from Hugging Face.</p></div>
+    </aside>
+  </div>
+</main><footer><span>CAPTION STUDIO</span><span>LOCAL BY DESIGN&nbsp; / &nbsp;MADE FOR VISION</span></footer>
+<script src="/app.js"></script></body></html>

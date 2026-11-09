@@ -12,7 +12,7 @@ function controls() { ui.run.disabled = !ready || !mediaType || busy; ui.run.fir
 async function status() {
   try {
     const s = await (await fetch('/api/status')).json();
-    ready = s.phase === 'ready';
+    ready = s.phase === 'ready' || (s.phase === 'idle' && !!s.model_id);
     ui['model-status'].textContent = s.message;
     ui['model-dot'].className = 'status-dot ' + (ready ? 'on' : s.phase === 'error' ? 'error' : '');
     ui['top-status'].textContent = ready ? 'Model ready' : s.phase === 'downloading' || s.phase === 'loading' ? 'Preparing model' : 'Local workspace';

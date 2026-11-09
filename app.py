@@ -3,6 +3,11 @@
 import base64
 import binascii
 import json
+import io
+import sys
+
+import api
+import model_loader
 import os
 import platform
 import re
@@ -13,6 +18,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from mlx_vlm import generate
+from mlx_vlm.prompt_utils import apply_chat_template
+from PIL import Image
+
 ROOT = Path(__file__).resolve().parent
 MODEL_DIR = ROOT / '.models'
 DEFAULT_MODEL = 'mlx-community/Qwen2-VL-2B-Instruct-4bit'
@@ -20,10 +29,12 @@ MAX_BODY = 16 * 1024 * 1024
 state_lock = threading.Lock()
 inference_lock = threading.Lock()
 state = {'phase': 'idle', 'message': 'No model loaded', 'model_id': None, 'path': None}
-runtime = {'model': None, 'processor': None, 'config': None}
+runtime = {'model': None, 'processor': None, 'config': None, 'repo': None}
 
 
 def model_id(value):
+    if not isinstance(value, str):
+        raise ValueError('Model must be an owner/model ID.')
     value = value.strip()
     if value.startswith(('https://', 'http://')):
         url = urlparse(value)
@@ -45,24 +56,18 @@ def update(**values):
 def prepare(repo):
     try:
         from huggingface_hub import snapshot_download
-        from mlx_vlm import load
-        from mlx_vlm.utils import load_config
         MODEL_DIR.mkdir(exist_ok=True)
         path = snapshot_download(repo_id=repo, local_dir=str(MODEL_DIR / repo))
         update(phase='loading', message='Download complete. Loading model into memory...', path=path)
         with inference_lock:
-            runtime.update(model=None, processor=None, config=None)
-            model, processor = load(path)
-            config = load_config(path)
-            runtime.update(model=model, processor=processor, config=config)
-        update(phase='ready', message='Model ready', model_id=repo, path=path)
+            model_loader.load_model(repo, path)
     except Exception as exc:
         traceback.print_exc()
         update(phase='error', message=str(exc) or type(exc).__name__, model_id=repo, path=None)
 
 
-def caption(image_data, prompt, max_tokens):
-    if not image_data.startswith('data:image/') or ';base64,' not in image_data:
+def caption(image_data, prompt, max_tokens, repo=None):
+    if not isinstance(image_data, str) or not image_data.startswith('data:image/') or ';base64,' not in image_data:
         raise ValueError('Expected a base64 image.')
     try:
         raw = base64.b64decode(image_data.split(',', 1)[1], validate=True)
@@ -71,19 +76,17 @@ def caption(image_data, prompt, max_tokens):
     if not raw or len(raw) > 10 * 1024 * 1024:
         raise ValueError('Image must be smaller than 10 MB.')
     with inference_lock:
-        if state['phase'] != 'ready' or runtime['model'] is None:
-            raise ValueError('Load a model before generating captions.')
-        from mlx_vlm import generate
-        from mlx_vlm.prompt_utils import apply_chat_template
-        from PIL import Image
+        model_loader.load_local(repo or state['model_id'] or DEFAULT_MODEL)
         with tempfile.TemporaryDirectory(prefix='vlm-caption-') as directory:
             image_path = Path(directory) / 'frame.jpg'
-            import io
             with Image.open(io.BytesIO(raw)) as img:
                 img.convert('RGB').save(image_path, 'JPEG', quality=90)
             formatted = apply_chat_template(runtime['processor'], runtime['config'], prompt, num_images=1)
-            result = generate(runtime['model'], runtime['processor'], formatted, [str(image_path)], max_tokens=max_tokens, verbose=False)
-            return str(getattr(result, 'text', result)).strip()
+            try:
+                result = generate(runtime['model'], runtime['processor'], formatted, [str(image_path)], max_tokens=max_tokens, verbose=False)
+                return str(getattr(result, 'text', result)).strip()
+            finally:
+                model_loader.touch()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -123,6 +126,8 @@ class Handler(BaseHTTPRequestHandler):
             if length <= 0 or length > MAX_BODY:
                 raise ValueError('Request is too large or empty.')
             data = json.loads(self.rfile.read(length))
+            if not isinstance(data, dict):
+                raise ValueError('Expected a JSON object.')
             if self.path == '/api/model':
                 repo = model_id(data.get('model', ''))
                 with state_lock:
@@ -138,15 +143,26 @@ class Handler(BaseHTTPRequestHandler):
                 tokens = max(16, min(512, int(data.get('max_tokens', 100))))
                 return self.send_json(200, {'caption': caption(data.get('image', ''), prompt, tokens)})
             return self.send_error(404)
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        except model_loader.ModelError as exc:
+            self.send_json(exc.status, {'error': str(exc)})
+        except (ValueError, TypeError) as exc:
             self.send_json(400, {'error': str(exc)})
         except Exception as exc:
             traceback.print_exc()
             self.send_json(500, {'error': str(exc) or type(exc).__name__})
 
 
+model_loader.configure(sys.modules[__name__])
+api.configure(sys.modules[__name__])
+
+
+class SharedHandler(api.HandlerMixin, Handler):
+    pass
+
+
 if __name__ == '__main__':
+    model_loader.start_idle_timer()
     port = int(os.environ.get('PORT', '8765'))
-    server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+    server = ThreadingHTTPServer(('127.0.0.1', port), SharedHandler)
     print('Caption Studio running at http://127.0.0.1:%s' % port, flush=True)
     server.serve_forever()

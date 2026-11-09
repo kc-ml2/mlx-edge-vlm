@@ -22,3 +22,22 @@ Paste a Hugging Face model URL or `owner/model` and choose **Download & load**. 
 Choose an image and generate a caption, or choose a video and start captioning. During playback the app samples frames, compares them to the last captioned frame, and generates a new caption when the image changes enough. Captions are timestamped at the sampled frame; inference speed can lag behind playback, so frames may be skipped. Sensitivity and sample interval are adjustable. Playback and captioning stop when the video is paused. A running inference may finish after pausing.
 
 The application binds only to localhost and has no authentication. Only use models and model repositories you trust: some model loaders can execute code from model repositories. Do not expose this server to a network. The model and Hugging Face caches use disk space until removed manually.
+
+## OpenAI-compatible API
+
+Run `python app.py` as usual. The UI and API share one model and inference lock.
+
+Base URL: `http://127.0.0.1:8765/v1`. Supports `GET /v1/models` and
+`POST /v1/chat/completions`. Use the Hugging Face `owner/model` ID as `model`.
+Send one user message with a base64 `image_url` and optional text; a preceding
+system message is also supported. Only non-streaming, single-image requests are
+supported. `max_tokens` accepts 1–512 (default 100).
+
+Models load from `.models/` on first request and are released after 5 minutes
+without UI or API inference. The next request reloads them; requesting a different
+model replaces the resident model. API requests never download models: missing models return HTTP 404 with
+`error.code: model_not_found`. Download through the app first.
+Set `MODEL_IDLE_TIMEOUT` (seconds) and `PORT` to override defaults.
+
+The API is localhost-only, without authentication. With an OpenAI client, use a
+placeholder API key.

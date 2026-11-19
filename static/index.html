@@ -20,6 +20,13 @@
       <div class="media-footer"><div><span class="tiny-label">SOURCE</span><strong id="filename">No file selected</strong></div><button id="run" class="button primary" disabled>Generate caption <span>↗</span></button></div>
       <div class="section-heading results-heading"><div><span class="section-number">02</span><h2>Caption output</h2></div><span class="section-meta" id="result-status">WAITING FOR MEDIA</span></div>
       <div class="output" id="output"><div class="output-empty"><span>✳</span><div><strong>Your captions will appear here</strong><p>Load a model and choose media to begin.</p></div></div></div>
+      <div class="follow-up" id="follow-up" hidden>
+        <div class="follow-up-header"><span class="tiny-label">FOLLOW UP</span><span class="follow-up-hint">Ask about the latest captioned scene</span></div>
+        <div class="follow-up-row">
+          <input id="question" type="text" maxlength="2000" placeholder="What else do you want to know about this scene?" autocomplete="off">
+          <button id="ask" class="button dark" disabled>Ask <span>↗</span></button>
+        </div>
+      </div>
     </section>
     <aside class="sidebar">
       <div class="side-title"><span>SETUP</span><span>✳</span></div>

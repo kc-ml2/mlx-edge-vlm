@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
-const ui = Object.fromEntries(['file','choose','replace','drop-zone','empty','image','video','filename','media-meta','run','model','load','model-status','model-dot','top-status','prompt','interval','threshold','output','result-status'].map(id => [id, $(id)]));
-let ready = false, mediaType = '', objectUrl = '', busy = false, previousFrame = null, lastSample = -Infinity, session = 0, lastCaption = '';
+const ui = Object.fromEntries(['file','choose','replace','drop-zone','empty','image','video','filename','media-meta','run','model','load','model-status','model-dot','top-status','prompt','interval','threshold','output','result-status','follow-up','question','ask'].map(id => [id, $(id)]));
+let ready = false, mediaType = '', objectUrl = '', busy = false, previousFrame = null, lastSample = -Infinity, session = 0, lastCaption = '', lastImage = '', history = [];
 
 async function post(path, data) {
   const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
@@ -8,7 +8,13 @@ async function post(path, data) {
   if (!response.ok) throw new Error(body.error || 'Request failed');
   return body;
 }
-function controls() { ui.run.disabled = !ready || !mediaType || busy; ui.run.firstChild.textContent = busy ? 'Generating... ' : mediaType === 'video' ? 'Start captioning ' : 'Generate caption '; }
+function controls() {
+  ui.run.disabled = !ready || !mediaType || busy;
+  ui.run.firstChild.textContent = busy ? 'Generating... ' : mediaType === 'video' ? 'Start captioning ' : 'Generate caption ';
+  ui.ask.disabled = !ready || !lastImage || busy || !ui.question.value.trim();
+  ui.question.disabled = !lastImage || busy;
+  ui['follow-up'].hidden = !lastImage;
+}
 async function status() {
   try {
     const s = await (await fetch('/api/status')).json();
@@ -31,7 +37,7 @@ function selectFile(file) {
   (mediaType === 'image' ? ui.image : ui.video).src = objectUrl;
   ui.filename.textContent = file.name; ui['media-meta'].textContent = mediaType.toUpperCase();
   ui.output.innerHTML = '<div class="output-empty"><span>✳</span><div><strong>Ready for a closer look</strong><p>Generate a caption to see the result.</p></div></div>';
-  ui['result-status'].textContent = 'READY'; previousFrame = null; lastSample = -Infinity; lastCaption = ''; controls();
+  ui['result-status'].textContent = 'READY'; previousFrame = null; lastSample = -Infinity; lastCaption = ''; lastImage = ''; history = []; ui.question.value = ''; controls();
 }
 ui.file.onchange = () => selectFile(ui.file.files[0]);
 for (const event of ['dragenter','dragover']) ui['drop-zone'].addEventListener(event, e => { e.preventDefault(); ui['drop-zone'].classList.add('drag'); });
@@ -47,10 +53,11 @@ function frame(element) {
 }
 function difference(a,b) { let total = 0; for (let i=0;i<a.length;i+=4) total += Math.abs(a[i]-b[i])+Math.abs(a[i+1]-b[i+1])+Math.abs(a[i+2]-b[i+2]); return total / (32*32*3*255); }
 function time(t) { const m = Math.floor(t/60), s = Math.floor(t%60); return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
-function addCaption(text, timestamp) {
+function addCaption(text, timestamp, kind = 'caption') {
   if (ui.output.querySelector('.output-empty')) ui.output.textContent = '';
-  const row = document.createElement('div'); row.className = 'caption-row';
-  const stamp = document.createElement('span'); stamp.className='caption-time'; stamp.textContent = timestamp == null ? 'IMAGE' : time(timestamp);
+  const row = document.createElement('div'); row.className = 'caption-row' + (kind === 'question' ? ' question-row' : kind === 'answer' ? ' answer-row' : '');
+  const stamp = document.createElement('span'); stamp.className='caption-time';
+  stamp.textContent = kind === 'question' ? 'YOU' : kind === 'answer' ? 'REPLY' : timestamp == null ? 'IMAGE' : time(timestamp);
   const caption = document.createElement('p'); caption.textContent = text; row.append(stamp, caption); ui.output.prepend(row);
 }
 async function generate(element, timestamp, force = false) {
@@ -60,13 +67,37 @@ async function generate(element, timestamp, force = false) {
     const sample = frame(element);
     if (!force && previousFrame && difference(previousFrame, sample.pixels) < Number(ui.threshold.value)) return;
     busy = true; controls(); ui['result-status'].textContent = 'GENERATING';
-    const result = await post('/api/caption', {image:sample.image, prompt:ui.prompt.value, max_tokens:100});
+    const prompt = ui.prompt.value.trim();
+    const result = await post('/api/caption', {image:sample.image, prompt, max_tokens:100});
     if (currentSession !== session) return;
     previousFrame = sample.pixels;
-    if (result.caption && (timestamp == null || result.caption !== lastCaption)) { addCaption(result.caption, timestamp); lastCaption = result.caption; }
+    if (result.caption && (timestamp == null || result.caption !== lastCaption)) {
+      addCaption(result.caption, timestamp);
+      lastCaption = result.caption;
+      lastImage = sample.image;
+      history = [{role:'user', content:prompt}, {role:'assistant', content:result.caption}];
+    }
     ui['result-status'].textContent = timestamp == null ? 'COMPLETE' : 'LIVE CAPTIONS';
   } catch (e) { if (currentSession === session) { ui['result-status'].textContent = 'ERROR'; addCaption(e.message, timestamp); if (mediaType === 'video') ui.video.pause(); } }
   finally { busy = false; controls(); }
+}
+async function askFollowUp() {
+  const question = ui.question.value.trim();
+  if (busy || !ready || !lastImage || !question) return;
+  const currentSession = session;
+  const messages = history.concat([{role:'user', content:question}]);
+  try {
+    busy = true; controls(); ui['result-status'].textContent = 'ANSWERING';
+    addCaption(question, null, 'question');
+    ui.question.value = '';
+    const result = await post('/api/ask', {image:lastImage, messages, max_tokens:160});
+    if (currentSession !== session) return;
+    addCaption(result.answer, null, 'answer');
+    history = messages.concat([{role:'assistant', content:result.answer}]);
+    ui['result-status'].textContent = 'COMPLETE';
+  } catch (e) {
+    if (currentSession === session) { ui['result-status'].textContent = 'ERROR'; addCaption(e.message, null, 'answer'); }
+  } finally { busy = false; controls(); ui.question.focus(); }
 }
 ui.run.onclick = async () => {
   if (mediaType === 'image') return generate(ui.image, null, true);
@@ -74,6 +105,9 @@ ui.run.onclick = async () => {
   previousFrame = null; lastSample = -Infinity;
   try { await ui.video.play(); } catch (e) { ui['result-status'].textContent = e.message; }
 };
+ui.ask.onclick = askFollowUp;
+ui.question.addEventListener('input', controls);
+ui.question.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); askFollowUp(); } });
 ui.video.addEventListener('seeked', () => { previousFrame = null; lastSample = -Infinity; });
 ui.video.addEventListener('pause', () => { if (mediaType === 'video' && !busy) ui['result-status'].textContent = ui.video.ended ? 'COMPLETE' : 'PAUSED'; });
 setInterval(() => {
